@@ -8,7 +8,7 @@
 
 import UIKit
 import RealmSwift
-
+import UserNotifications
 
 class EvaluViewController: UIViewController, UIApplicationDelegate  {
     var animationTimer: Timer?
@@ -49,6 +49,7 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
             notification:)), name: UIApplication.didEnterBackgroundNotification, object: nil)
         print("viewWillappear")
         let result = realm.object(ofType: Todo.self, forPrimaryKey: "\(todoid)")
+        id = result!.title
         donetime = result!.donetime
         store_donetime = donetime
         let s = donetime % 60
@@ -94,7 +95,7 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
             print(end)
         }
     }
-
+    
     // AppDelegate -> applicationDidEnterBackgroundの通知
     @objc func EnterBackground(notification: Notification) {
         print("バックグラウンド")
@@ -102,6 +103,22 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
             start = Date()
             print(start)
         }
+        let result = realm.object(ofType: Todo.self, forPrimaryKey: "\(todoid)")
+        
+        let notification = UNMutableNotificationContent()
+        //通知のタイトル
+        notification.title = testlabel.text!
+        //通知の本文
+        notification.body = "目標時間になりました！"
+        //通知の音
+        notification.sound = UNNotificationSound.default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(result!.dotime - result!.donetime - countNum), repeats: false)
+        //通知のリクエスト
+        let request = UNNotificationRequest(identifier: id, content: notification,
+                                            trigger: trigger)
+        //通知を実装
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
     
     @objc func updateDisplay(){
@@ -115,6 +132,7 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
         //let m = (countNum - s - ms) / 6000 % 3600
         timeDisplay.text = String(format: "++ %02d:%02d:%02d", h,m,s)
         dotimeDisply.text = String(format: "%02d:%02d:%02d", (donetime / 3600), (donetime / 60) % 60, donetime % 60)
+        
     }
     
     
@@ -125,14 +143,14 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
                        initialSpringVelocity: 8,
                        options: .curveEaseOut,
                        animations: { () -> Void in
-            self.button.transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
+                        self.button.transform = CGAffineTransform(scaleX: 1.0, y: 1.0)
         }, completion: nil)
         if timerRunning == false {
             
             let url = URL(string: "https:f.easyuploader.app/eu-prd/upload/20191213053714_37317a364e.mobileconfig")
-            UIApplication.shared.open(url!, options: [:], completionHandler: nil)
+            //UIApplication.shared.open(url!, options: [:], completionHandler: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(EnterForeground(
-            notification:)), name: UIApplication.willEnterForegroundNotification, object: nil)
+                notification:)), name: UIApplication.willEnterForegroundNotification, object: nil)
             
             timer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(EvaluViewController.updateDisplay), userInfo: nil, repeats: true)
             timerRunning = true
@@ -143,6 +161,7 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
             timerRunning = false
             //sender.setTitle("再開", for: .normal)
             sender.setImage(image_play, for: .normal)
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
         }
     }    
     
@@ -160,10 +179,10 @@ class EvaluViewController: UIViewController, UIApplicationDelegate  {
     
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         /*
-        let evaludetailsviewcontroller = segue.destination as! EvaluDetailsViewController
-        evaludetailsviewcontroller.sepatime = countNum
-        evaludetailsviewcontroller.index = index
-        */
+         let evaludetailsviewcontroller = segue.destination as! EvaluDetailsViewController
+         evaludetailsviewcontroller.sepatime = countNum
+         evaludetailsviewcontroller.index = index
+         */
         if (segue.identifier == "toResultViewController") {
             let vc = segue.destination as! ResultViewController
             vc.index = index

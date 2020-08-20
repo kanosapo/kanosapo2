@@ -4,7 +4,7 @@
 //
 //  Created by 三浦翔 on 2019/09/28.
 //  Copyright © 2019 Swift-Biginners. All rights reserved.
-//  
+//
 import UIKit
 import Foundation
 
@@ -123,14 +123,31 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         addEvent()
         let url = URL(string: "calshow:")!
         UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        
         NotificationCenter.default.addObserver(self, selector: #selector(EnterForeground(
             notification:)), name: UIApplication.willEnterForegroundNotification, object: nil)
     }
-    @objc func EnterForeground(notification: Notification) { //ここのメソッドが２回はしる
-        print("フォアグラウンド")
-        MyScrollView.contentOffset.y = 0
-        Initialization()
+    
+    @objc func EnterForeground(notification: Notification?) { //ここのメソッドが２回はしる
+        if(self.isViewLoaded && (self.view.window != nil)){
+            print("フォアグラウンド")
+            MyScrollView.contentOffset.y = 0
+            
+            try! realm.write{
+                let results = realm.objects(DefaultCalendar.self)
+                realm.delete(results)
+            }
+            Initialization()
+        }
+        
     }
+    
+    //    @objc func EnterForeground(_ notification: Notification?) {
+    //        if (self.isViewLoaded && (self.view.window != nil)) {
+    //            print("フォアグラウンド")
+    //            Initialization()
+    //        }
+    //    }
     
     
     @IBAction func apperManu(_ sender: Any) {
@@ -162,7 +179,6 @@ class ViewController: UIViewController, UIScrollViewDelegate {
             })
         }
     }
-    
     
     @IBAction func disapperManu(_ sender: Any) {
         ManuView.alpha = 1.0
@@ -263,16 +279,39 @@ class ViewController: UIViewController, UIScrollViewDelegate {
     }
     
     func getCalendar(){
-        print("getCalendar")
-        var componentsOneDayDelay = DateComponents()
-        componentsOneDayDelay.hour = 24 // 今の時刻から1年進めるので1を代入
-        let startDate = Date()
-        let endDate = calendar.date(byAdding: componentsOneDayDelay, to: Date())!
-        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
-        
-        eventArray = eventStore.events(matching: predicate)
-        print(eventArray)
-    }
+           print("getCalendar")
+           var componentsOneDayDelay = DateComponents()
+           componentsOneDayDelay.hour = 24 // 今の時刻から1年進めるので1を代入
+           let startDate = Date()
+           let endDate = calendar.date(byAdding: componentsOneDayDelay, to: Date())!
+           let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
+           
+           eventArray = eventStore.events(matching: predicate)
+           var cnt = 0
+           for event in eventArray{
+               try! realm.write{
+                   let item = DefaultCalendar()
+                   
+                   item.title = event.title
+                   item.start = event.startDate
+                   item.end = event.endDate
+                   if(cnt >= 9){
+                       item.calendarid = randomString(length: 9) + String(cnt + 1)
+                   }else{
+                       item.calendarid = randomString(length: 9) + "0" + String(cnt + 1)
+                   }
+                   let diffMin = Calendar.current.dateComponents([.minute], from:  item.start, to: item.end).minute!
+                   item.allDay = event.isAllDay
+                   item.c_dotime = diffMin * 60
+                   item.color_r = Double(round(event.calendar.cgColor.components![0]*100)/100)
+                   item.color_g = Double(round(event.calendar.cgColor.components![1]*100)/100)
+                   item.color_b = Double(round(event.calendar.cgColor.components![2]*100)/100)
+                   realm.add(item)
+               }
+               cnt += 1
+           }
+           print(eventArray)
+       }
     
     func addEvent() {
         print("addEvent")
@@ -280,10 +319,8 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         var componentsOneDayDelay = DateComponents()
         componentsOneDayDelay.hour = 24 // 今の時刻から1年進めるので1を代入
         
-        let defaultCalendar = eventStore.defaultCalendarForNewEvents
-        
         var addEvents = [MyTodo]()
-        var eventArray2 = eventArray
+        var eventArray2 = [EKEvent]()
         let date = NSDate() as Date
         let dateFormater = DateFormatter()
         
@@ -291,59 +328,37 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         dateFormater.dateFormat = "yyyy/MM/dd"
         dateFormater.timeZone = TimeZone(identifier: "Asia/Tokyo")
         
-        for item in DataA{
-            item.start = dateFormater.string(from: date)+" "+"00:00"
-            item.end = dateFormater.string(from: date)+" "+"23:59"
-            addEvents.append(item)
-        }
+        let d_cal = realm.objects(DefaultCalendar.self)
+        let defaultCalendar = eventStore.defaultCalendarForNewEvents
         
-        // イベントを作成して情報をセット
-        for item in addEvents{
-            let end = Calendar.current.date(byAdding: .minute, value: -20, to: convert_date_details(string: item.end))!
+        for item in d_cal{
             let event = EKEvent(eventStore: eventStore)
-            event.title = item.todoTitle
-            event.startDate = convert_date_details(string: item.start)
-            event.endDate = convert_date_details(string: item.end)
-            event.isAllDay = item.all_day
+            event.title = item.title
+            event.startDate = item.start
+            event.endDate = item.end
+            event.isAllDay = item.allDay
             event.calendar = defaultCalendar
+            
             eventArray2.append(event)
         }
-        for view in ContentView.subviews{
-            if(type(of: view) == SampleView.self && view.tag < 999999999){
-                let event = EKEvent(eventStore: eventStore)
-                let startTime = getTaskTime(view: view)
-                let end = Calendar.current.date(byAdding: .minute, value: Int(view.frame.height) - 20, to: startTime)!
-                var title = String()
-                for item in view.subviews{
-                    if(type(of: item) == UILabel.self){
-                        if((item as! UILabel).tag == 26){
-                            title = (item as! UILabel).text!
-                            print(item)
-                        }
-                    }
-                }
-                event.title = title
-                print("コンテントビューのタイトル")
-                print(event.title)
-                event.startDate = startTime
-                event.endDate = end
-                event.isAllDay = false
-                event.calendar = defaultCalendar
-                eventArray2.append(event)
+
+        print(eventArray2)
+        
+        //削除
+        print("----削除----")
+        //for _ in 0...1{
+        for item in eventArray{
+            do {
+                print(item.title)
+                print(item.startDate)
+                print(item.endDate)
+                try eventStore.remove(item, span: .thisEvent)
+            } catch let error {
+                print("削除失敗")
             }
         }
-//        let cal = realm.objects(Calendar24.self)
-//        for item in cal{
-//            let event = EKEvent(eventStore: eventStore)
-//            let end = Calendar.current.date(byAdding: .second, value: item.c_dotime, to: item.start)
-//            event.title = item.todo.first!.title
-//            event.startDate = item.start
-//            event.endDate = end
-//            event.isAllDay = false
-//            event.calendar = defaultCalendar
-//            eventArray2.append(event)
-//        }
-//        print(eventArray2)
+        //}
+        
         //イベントの登録
         print("----登録----")
         for item in eventArray2{
@@ -357,20 +372,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 print(error)
             }
         }
-        //削除
-        print("----削除----")
-        for _ in 0...1{
-            for item in eventArray{
-                do {
-                    print(item.title)
-                    print(item.startDate)
-                    print(item.endDate)
-                    try eventStore.remove(item, span: .thisEvent)
-                } catch let error {
-                    print("削除失敗")
-                }
-            }
-        }
+        
     }
     
     override func viewDidLoad() {
@@ -406,14 +408,17 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         let contentRect = ContentView.bounds
         MyScrollView.contentSize = CGSize(width: contentRect.width, height: 1720)
     }
-    
+    var ini_cnt = 0
     func Initialization(){
-        print("Initialization")
+        ini_cnt += 1
+        print("-----------Initialization----------")
+        print(ini_cnt)
+        
         day.titleView = getnowTime()
         
         getCalendar()
-        dataSet()
-        sortData()
+        //dataSet()
+        //sortData()
         craftCalendar()
         craftAllday(View: AlldayView)
         craftManu(View: ManuView)
@@ -430,37 +435,37 @@ class ViewController: UIViewController, UIScrollViewDelegate {
     }
     
     func remove_calendarArray(){
-            print("remove_calendarArray")
-            let Now = NSDate() as Date
-            var indexs = [Int]()
-            var x = 0
-            
-            for item in calendarArray{
-                if(item.end != ""){
-                    print(item.todoTitle)
-                    print((Calendar.current.dateComponents([.second], from: Now, to: convert_date_details(string: item.start)).second!))
-                    print(item.end)
-                    if((Calendar.current.dateComponents([.second], from: Now, to: convert_date_details(string: item.end)).second!) < 0){
-                        print("append")
-                        indexs.append(x)
-                    }
+        print("remove_calendarArray")
+        let Now = NSDate() as Date
+        var indexs = [Int]()
+        var x = 0
+        
+        for item in calendarArray{
+            if(item.end != ""){
+                print(item.todoTitle)
+                print((Calendar.current.dateComponents([.second], from: Now, to: convert_date_details(string: item.start)).second!))
+                print(item.end)
+                if((Calendar.current.dateComponents([.second], from: Now, to: convert_date_details(string: item.end)).second!) < 0){
+                    print("append")
+                    indexs.append(x)
                 }
-                x += 1
             }
-            if(indexs.count != 0){
-                for i in indexs.reversed(){
-                    print("calendarArray.remove_index:"+String(i))
-                    calendarArray.remove(at: i)
-                }
+            x += 1
+        }
+        if(indexs.count != 0){
+            for i in indexs.reversed(){
+                print("calendarArray.remove_index:"+String(i))
+                calendarArray.remove(at: i)
             }
         }
+    }
     
     func dataSet(){
         print("dataSet")
-        Datas.removeAll()
-        DataM.removeAll()
-        DataA.removeAll()
-        DataStamp.removeAll()
+        //        Datas.removeAll()
+        //        DataM.removeAll()
+        //        DataA.removeAll()
+        //        DataStamp.removeAll()
         let dateFormater = DateFormatter()
         
         dateFormater.locale = Locale(identifier: "ja_JP")
@@ -499,7 +504,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
             Data.beforeTag = -1
             Data.afterTag = -1
             Data.task_flag = false
-           
+            
             if(item.isAllDay){
                 print("DataAへ追加")
                 print(Data.todoTitle)
@@ -537,153 +542,21 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         minute = Double(hour)/Double(60)
         
         let cal = realm.objects(Calendar24.self)
+        let defaultcal = realm.objects(DefaultCalendar.self)
+        
         for item in cal {
-            let end = Calendar.current.date(byAdding: .second, value: item.c_dotime, to: item.start)!
-            let diffNow = Calendar.current.dateComponents([.minute], from: now as Date, to: item.start).minute!
-            let diffMin = Calendar.current.dateComponents([.minute], from:  item.start, to: end).minute!
-            userY = CGFloat(Double(no1point) + minute * Double(diffNow) + Double(Calendar.current.component(.minute, from: now)) * minute)
-            for i in 0..<92 {
-                if(Double(userY) > Double(no1point) + Double(hour*i/4) && Double(userY) <= Double(no1point) + Double(hour/8) + Double(hour*i/4)){
-                    userY = CGFloat(Double(no1point) + Double(hour*i/4))
-                }else if(Double(userY) <= Double(no1point) + Double(hour*(i+1)/4) && Double(userY) > Double(no1point) + Double(hour/8) + Double(hour*i/4)){
-                    userY = CGFloat(Double(no1point) + Double(hour*(i+1)/4))
-                }
-            }
-            let height = CGFloat(minute * Double(diffMin))
-            let x:CGFloat = 60
-            var y:CGFloat = userY
-            if(currentPoint != nil){
-                y += currentPoint.y
-            }
-            //UIViewController.viewの幅と高さを取得
-            let width:CGFloat = 300
-            
-            let frame:CGRect = CGRect(x: x, y: y, width: width, height: height + 20)
-            //カスタマイズViewを生成
-            let titleLabel: UILabel = UILabel(frame: CGRect(x: 0,y: 0,width: 300,height: 15))
-//            titleLabel.text = " " + item.todo.first!.title
-            titleLabel.text = item.todo.first!.title
-            print(titleLabel)
-            
-            let tasktime = item.c_dotime/60
-            let tasktimeLabel: UILabel = UILabel(frame: CGRect(x: 100,y: 20,width: 100,height: 20))
-            let timetext = String(format: "%02dh %02dm", Int(tasktime/60), Int(round(Double(tasktime) - Double(60*Int(tasktime/60)))))
-            tasktimeLabel.text = timetext
-            print(timetext)
-            titleLabel.textColor = UIColor.white
-            titleLabel.font = UIFont.boldSystemFont(ofSize: 13)
-            titleLabel.layer.masksToBounds = true
-            titleLabel.layer.cornerRadius = 4
-//            var color = UIColor(red: CGFloat(item.color[0]), green: CGFloat(item.color[1]), blue: CGFloat(item.color[2]), alpha: CGFloat(item.color[3]))
-            var color = UIColor.black
-            titleLabel.backgroundColor = color
-            tasktimeLabel.textColor = UIColor.white
-            
-            var imageView = UIImageView(image:UIImage(named:"x")!)
-            
-            let ReturnButton :UIButton = UIButton(frame: CGRect(x: width - 15,y: 0,width: 15,height: 15))
-            ReturnButton.setImage(UIImage(named:"close_black"), for: .normal)
-            //ReturnButton.backgroundColor = UIColor.red
-            ReturnButton.addTarget(self, action: #selector(ReturnToMenu(_:)), for: UIControl.Event.touchUpInside)
-            
-            //myView.addSubview(tasktimeLabel)
-            let calendarView:SampleView = SampleView(frame: frame)
-            //calendarView.alpha = 0.3
-//            if(item.task_flag){
-//            let timetext = String(format: "%02dh %02dm", Int(item.todo.first!.dotime/3600), Int(round(Double(item.todo.first!.dotime/60) - Double(60*Int(item.todo.first!.dotime/3600)))))
-//                calendarView.dotimeLabel.text = "目標時間：" + timetext
-//            }
-            
-            calendarView.content.backgroundColor = color
-            calendarView.leftBorder.backgroundColor = color
-            calendarView.fakeView.backgroundColor = color
-            calendarView.title.backgroundColor = color
-            titleLabel.tag = 26
-            calendarView.addSubview(titleLabel)
-            calendarView.addSubview(ReturnButton)
-            calendarView.tag = Int(item.calendarid)!
-            ContentView.addSubview(calendarView)
-            print(calendarView)
+            let color = UIColor.black
+            makeView(start: item.start, c_dotime: item.c_dotime, dotime: item.todo.first!.dotime, calendarid: item.calendarid, title: item.todo.first!.title, color: color)
         }
-        for item in Datas{
-            if(item.start != ""){
-                print("----------Datas_craft---------")
-                print(item.todoTitle)
-                print(item.start)
-                print(item.end)
-                print(item.flag)
-                print(item.beforeTag)
-                print(item.afterTag)
-                print(item.In_flag)
-                print(item.randomID)
-                print(item.default_allday)
-                let diffNow = Calendar.current.dateComponents([.minute], from: now as Date, to: convert_date_details(string: item.start)).minute!
-                let diffMin = Calendar.current.dateComponents([.minute], from: convert_date_details(string: item.start), to: convert_date_details(string: item.end)).minute!
-                userY = CGFloat(Double(no1point) + minute * Double(diffNow) + Double(Calendar.current.component(.minute, from: now)) * minute)
-                for i in 0..<92 {
-                    if(Double(userY) > Double(no1point) + Double(hour*i/4) && Double(userY) <= Double(no1point) + Double(hour/8) + Double(hour*i/4)){
-                        userY = CGFloat(Double(no1point) + Double(hour*i/4))
-                    }else if(Double(userY) <= Double(no1point) + Double(hour*(i+1)/4) && Double(userY) > Double(no1point) + Double(hour/8) + Double(hour*i/4)){
-                        userY = CGFloat(Double(no1point) + Double(hour*(i+1)/4))
-                    }
-                }
-                let height = CGFloat(minute * Double(diffMin))
-                let x:CGFloat = 60
-                var y:CGFloat = userY
-                if(currentPoint != nil){
-                    y += currentPoint.y
-                }
-                //UIViewController.viewの幅と高さを取得
-                let width:CGFloat = 300
-                
-                let frame:CGRect = CGRect(x: x, y: y, width: width, height: height + 20)
-                //カスタマイズViewを生成
-                let titleLabel: UILabel = UILabel(frame: CGRect(x: 0,y: 0,width: 300,height: 15))
-//                titleLabel.text = " " + item.todoTitle!
-                titleLabel.text = item.todoTitle!
-                let tasktime = item.dotime/60
-                let tasktimeLabel: UILabel = UILabel(frame: CGRect(x: 100,y: 20,width: 100,height: 20))
-                let timetext = String(format: "%02dh %02dm", Int(tasktime/60), Int(round(Double(tasktime) - Double(60*Int(tasktime/60)))))
-                tasktimeLabel.text = timetext
-                titleLabel.textColor = UIColor.white
-                titleLabel.font = UIFont.boldSystemFont(ofSize: 13)
-                titleLabel.layer.masksToBounds = true
-                titleLabel.layer.cornerRadius = 4
-                var color = UIColor(red: CGFloat(item.color[0]), green: CGFloat(item.color[1]), blue: CGFloat(item.color[2]), alpha: CGFloat(item.color[3]))
-                titleLabel.backgroundColor = color
-                tasktimeLabel.textColor = UIColor.white
-                
-                var imageView = UIImageView(image:UIImage(named:"x")!)
-                
-                let ReturnButton :UIButton = UIButton(frame: CGRect(x: width - 15,y: 0,width: 15,height: 15))
-                ReturnButton.setImage(UIImage(named:"close_black"), for: .normal)
-                //ReturnButton.backgroundColor = UIColor.red
-                ReturnButton.addTarget(self, action: #selector(ReturnToMenu(_:)), for: UIControl.Event.touchUpInside)
-                
-                //myView.addSubview(tasktimeLabel)
-                let calendarView:SampleView = SampleView(frame: frame)
-                //calendarView.alpha = 0.3
-                if(item.task_flag){
-                    let timetext = String(format: "%02dh %02dm", Int(item.dotime/3600), Int(round(Double(item.dotime/60) - Double(60*Int(item.dotime/3600)))))
-                    calendarView.dotimeLabel.text = "目標時間：" + timetext
-                }
-                
-                calendarView.content.backgroundColor = color
-                calendarView.leftBorder.backgroundColor = color
-                calendarView.fakeView.backgroundColor = color
-                calendarView.title.backgroundColor = color
-                titleLabel.tag = 26
-                calendarView.addSubview(titleLabel)
-                calendarView.addSubview(ReturnButton)
-                item.afterTag = viewtag
-                calendarView.tag = viewtag
-                viewtag += 1
-                item.flag = true
-                item.In_flag = true
-                ContentView.addSubview(calendarView)
+        print("DefaultCalendar")
+        for item in defaultcal {
+            let color = UIColor(displayP3Red: CGFloat(item.color_r), green: CGFloat(item.color_g), blue: CGFloat(item.color_b), alpha: 1.0)
+            if(item.allDay == false){
+                makeView(start: item.start, c_dotime: item.c_dotime, dotime: 0, calendarid: item.calendarid, title: item.title, color: color)
             }
         }
     }
+    
     
     func reloadLabel(){
         
@@ -730,7 +603,6 @@ class ViewController: UIViewController, UIScrollViewDelegate {
     }
     
     func craftManu(View: UIView){
-        
         print("craftManu")
         let f = DateFormatter()
         f.timeStyle = .none
@@ -772,12 +644,12 @@ class ViewController: UIViewController, UIScrollViewDelegate {
             longPress.allowableMovement = 150
             //longPress.delegate = self as! UIGestureRecognizerDelegate
             // tableViewにrecognizerを設定
-            let taskTitle: UILabel = UILabel(frame: CGRect(x: 0,y: 1,width: 115,height: 15))
-            var TestView = UIView()
-
-            TestView = UIView.init(frame: CGRect.init(x: 5, y: 5 + ((StampView.subviews.count) * 25), width: 115, height: 20))
-            TestView.tag = Int(item.todoid)!
             
+            var TestView = UIView()
+            
+            TestView = UIView.init(frame: CGRect.init(x: 5, y: 5 + ((StampView.subviews.count) * 25), width: Int(self.view.frame.size.width)/3 + 15, height: 20))
+            TestView.tag = Int(item.todoid)!
+            let taskTitle: UILabel = UILabel(frame: CGRect(x: 0,y: 1,width: TestView.frame.size.width,height: 15))
             taskTitle.text = item.title
             taskTitle.textColor = UIColor.black
             //フォントサイズ
@@ -808,11 +680,13 @@ class ViewController: UIViewController, UIScrollViewDelegate {
             longPress.allowableMovement = 150
             //longPress.delegate = self as! UIGestureRecognizerDelegate
             // tableViewにrecognizerを設定
-            let taskTitle: UILabel = UILabel(frame: CGRect(x: 0,y: 1,width: 115,height: 15))
+            
             var TestView = UIView()
-
-            TestView = UIView.init(frame: CGRect.init(x: 5, y: 5 + ((TargetView.subviews.count) * 25), width: 115, height: 20))
+            
+            TestView = UIView.init(frame: CGRect.init(x: 5, y: 5 + ((TargetView.subviews.count) * 25), width: Int(self.view.frame.size.width)/3 + 15, height: 20))
             TestView.tag = tag
+            
+            let taskTitle: UILabel = UILabel(frame: CGRect(x: 0,y: 1,width: TestView.frame.size.width,height: 15))
             taskTitle.text = item.title
             
             TestView.tag = Int(item.todoid)!
@@ -841,8 +715,9 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         var tag = AllStart
         var cnt = Int(0)
         var y = Int(-1)
-        for item in DataA{
-            if(!item.flag){
+        let d_cal = realm.objects(DefaultCalendar.self)
+        for item in d_cal{
+            if(item.allDay == true){
                 if(cnt % 4 == 0){
                     cnt = 0
                     y += 1
@@ -851,16 +726,18 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 let TestView = UIView.init(frame: CGRect.init(x: 5 + (cnt * 85), y: 3 + (y * 24), width: 80, height: 20))
                 
                 let taskTitle: UILabel = UILabel(frame: CGRect(x: 0,y: 0,width: 80,height: 20))
-                taskTitle.text = item.todoTitle
+                taskTitle.text = item.title
                 TestView.layer.cornerRadius = 2
                 taskTitle.textAlignment = NSTextAlignment.center
                 taskTitle.font = UIFont(name: "Tsukushi A Round Gothic", size: 11)
                 //taskTitle.font = UIFont.systemFont(ofSize: 11)
                 
                 taskTitle.textColor = UIColor.white
-                TestView.tag = tag
-                item.beforeTag = tag
-                TestView.backgroundColor = UIColor(red: CGFloat(item.color[0]), green: CGFloat(item.color[1]), blue: CGFloat(item.color[2]), alpha: CGFloat(item.color[3]))
+                
+                TestView.tag = Int(item.calendarid)!
+                let color = UIColor(displayP3Red: CGFloat(item.color_r), green: CGFloat(item.color_g), blue: CGFloat(item.color_b), alpha: 1.0)
+                TestView.backgroundColor = color
+                //                TestView.backgroundColor = UIColor(displayP3Red: CGFloat(item.color_r), green: CGFloat(item.color_g), blue: CGFloat(item.color_b))
                 if(tag - AllStart > 7){
                     TestView.alpha = 0.0
                 }
@@ -882,8 +759,14 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 TestView.addGestureRecognizer(longPress)
                 tag += 1
                 cnt += 1
+                print("-----------------------")
+                print(TestView)
+                print(TestView.tag)
+                print(taskTitle)
             }
+            
         }
+        
     }
     
     func userDefaultData(){
@@ -901,16 +784,13 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         dateFormater.timeZone = TimeZone(identifier: "Asia/Tokyo")
         print("userDefaultData-Content.subviews")
         
-        let calendars = realm.objects(Calendar24.self)
         for view in ContentView.subviews{
             if(type(of: view) == SampleView.self){
                 print(view.tag)
                 let startTime = getTaskTime(view: view)
                 let dotime = Int((view.frame.height-20) * 60)
                 let end = convert_string_details(date: Calendar.current.date(byAdding: .second, value: dotime, to: startTime)!)
-                if(view.tag > 100000000){
-                    print("a")
-                    
+                if(view.tag > 1000000000 && view.tag < 10000000000){
                     try! realm.write{
                         let day = startTime
                         let end = Calendar.current.date(byAdding: .second, value: dotime, to: day)!
@@ -919,15 +799,95 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                         item!.c_dotime = dotime
                         item!.end = end
                     }
+                }else if(view.tag >= 10000000000){
+                    try! realm.write{
+                        let day = startTime
+                        let end = Calendar.current.date(byAdding: .second, value: dotime, to: day)!
+                        var item = realm.object(ofType: DefaultCalendar.self, forPrimaryKey: String(view.tag))
+                        item!.start = startTime
+                        item!.c_dotime = dotime
+                        item!.end = end
+                        print(startTime)
+                        print(end)
+                    }
                 }
             }
         }
     }
-
+    
+    func makeView(start:Date, c_dotime:Int, dotime:Int, calendarid:String, title:String, color:UIColor){
+        /*
+         start 開始時間
+         c_dotime タスク幅
+         dotime 目標時間
+         title タイトル
+         color 色
+         */
+        print("makeView")
+        print(start)
+        print(c_dotime)
+        print(dotime)
+        print(calendarid)
+        print(title)
+        print(color)
+        let now = Date()
+        let no1point = 30
+        let no23point = 1410
+        let hour = (no23point - no1point)/23
+        let minute:Double
+        minute = Double(hour)/Double(60)
+        let end = Calendar.current.date(byAdding: .second, value: c_dotime, to: start)!
+        let diffNow = Calendar.current.dateComponents([.minute], from: now as Date, to: start).minute!
+        let diffMin = Calendar.current.dateComponents([.minute], from:  start, to: end).minute!
+        var y = CGFloat(Double(no1point) + minute * Double(diffNow) + Double(Calendar.current.component(.minute, from: now)) * minute)
+        for i in 0..<92 {
+            if(Double(y) > Double(no1point) + Double(hour*i/4) && Double(y) <= Double(no1point) + Double(hour/8) + Double(hour*i/4)){
+                y = CGFloat(Double(no1point) + Double(hour*i/4))
+            }else if(Double(y) <= Double(no1point) + Double(hour*(i+1)/4) && Double(y) > Double(no1point) + Double(hour/8) + Double(hour*i/4)){
+                y = CGFloat(Double(no1point) + Double(hour*(i+1)/4))
+            }
+        }
+        if(currentPoint != nil){
+            y += currentPoint.y
+        }
+        let frame:CGRect = CGRect(x: 60, y: y, width: 300, height: CGFloat(minute * Double(diffMin)) + 20)
+        let calendarView:SampleView = SampleView(frame: frame)
+        calendarView.content.backgroundColor = color
+        calendarView.leftBorder.backgroundColor = color
+        calendarView.fakeView.backgroundColor = color
+        calendarView.title.backgroundColor = color
+        
+        let titleLabel: UILabel = UILabel(frame: CGRect(x: 0,y: 0,width: 300,height: 15))
+        //titleLabel.text = "  " + item.todo.first!.title
+        titleLabel.text = title
+        titleLabel.textColor = UIColor.white
+        titleLabel.font = UIFont.boldSystemFont(ofSize: 13)
+        titleLabel.layer.masksToBounds = true
+        titleLabel.layer.cornerRadius = 4
+        titleLabel.backgroundColor = color
+        
+        let tasktime = c_dotime/60
+        let tasktimeLabel: UILabel = UILabel(frame: CGRect(x: 100,y: 20,width: 100,height: 20))
+        let timetext = String(format: "%02dh %02dm", Int(tasktime/60), Int(round(Double(tasktime) - Double(60*Int(tasktime/60)))))
+        tasktimeLabel.text = timetext
+        tasktimeLabel.textColor = UIColor.white
+        var imageView = UIImageView(image:UIImage(named:"x")!)
+        let ReturnButton :UIButton = UIButton(frame: CGRect(x: 285,y: 0,width: 15,height: 15))
+        ReturnButton.setImage(UIImage(named:"close_black"), for: .normal)
+        ReturnButton.addTarget(self, action: #selector(deleteView(_:)), for: UIControl.Event.touchUpInside)
+        calendarView.addSubview(titleLabel)
+        calendarView.addSubview(ReturnButton)
+        calendarView.tag = Int(calendarid)!
+        ContentView.addSubview(calendarView)
+    }
+    
     func traceView(userY: CGFloat, height: CGFloat, tag: Int){
         let result_t = realm.object(ofType: Todo.self, forPrimaryKey: String(tag))
+        let result_d = realm.object(ofType: DefaultCalendar.self, forPrimaryKey: String(tag))
+        print("result_t")
         print(result_t)
-        print(type(of: result_t))
+        print("result_d")
+        print(result_d)
         let no1point = 30
         let no23point = 1410
         let hour = (no23point - no1point)/23
@@ -938,6 +898,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         print(tag)
         
         print("traceView")
+        
         //UIViewController.viewの座標取得
         let x:CGFloat = 60
         var y:CGFloat = userY
@@ -965,16 +926,35 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         let titleLabel: UILabel = UILabel(frame: CGRect(x: 0,y: 0,width: width,height: 15))
         let tasktimeLabel: UILabel = UILabel(frame: CGRect(x: 100,y: 20,width: 100,height: 20))
         
-//        let tasktime_hour = Int(tasktime / 60)
-//        let tasktime_minute = Int(tasktime % 60)
+        //        let tasktime_hour = Int(tasktime / 60)
+        //        let tasktime_minute = Int(tasktime % 60)
         
         let myView: SampleView = SampleView(frame: frame)
         
         let startTime = getTaskTime(view: myView)
-        var title = result_t!.title
-        var tasktime = result_t!.dotime
-        let timetext = String(format: "%02dh %02dm", Int(tasktime/60), Int(round(Double(tasktime) - Double(60*Int(tasktime/60)))))
-        tasktimeLabel.text = timetext
+        if(tag > 1000000000 && tag <= 10000000000){ //calendar24
+            print("trace-result_t~~~~~~~~~~~")
+            var title = result_t!.title
+            var tasktime = result_t!.dotime
+            let timetext = String(format: "%02dh %02dm", Int(tasktime/60), Int(round(Double(tasktime) - Double(60*Int(tasktime/60)))))
+            tasktimeLabel.text = timetext
+            titleLabel.text = " " + title
+            titleLabel.tag = 26
+            
+        }else if(tag > 10000000000 && tag <= 100000000000){ //default
+            print("trace-result_d~~~~~~~~~~~")
+            var title = result_d!.title
+            var tasktime = result_d!.c_dotime
+            let timetext = String(format: "%02dh %02dm", Int(tasktime/60), Int(round(Double(tasktime) - Double(60*Int(tasktime/60)))))
+            tasktimeLabel.text = timetext
+            titleLabel.text = " " + title
+            titleLabel.tag = 26
+            
+            
+        }
+        //        var title = result_t!.title
+        //        var tasktime = result_t!.dotime
+        
         
         titleLabel.textColor = UIColor.white
         //        var font = UIFont(name: "Tsukushi A Round Gothic", size: 10)
@@ -989,20 +969,22 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         print("startTime-traceView")
         var color = UIColor()
         
-//        let todo = realm.object(ofType: Todo.self, forPrimaryKey: String(tag))
+        //        let todo = realm.object(ofType: Todo.self, forPrimaryKey: String(tag))
         let new_todo = Todo()
+        let d_cal = DefaultCalendar()
         let todo = realm.objects(Todo.self)
         var save_id = String()
-        var add_flag = false
-        for item in todo{
-            if(item.base == result_t!.todoid){
-                add_flag = true
-            }
-        }
-        print(add_flag)
+//        var add_flag = false
+//        for item in todo{
+//            if(item.base == result_t!.todoid){
+//                add_flag = true
+//            }
+//        }
+//        print(add_flag)
         try! realm.write{
-            if(result_t!.datestring == "指定なし" && add_flag == false){
+            if(result_t != nil && result_t!.datestring == "指定なし"){
                 let f = DateFormatter()
+                print("~~~~~~result_t~~~~~~~")
                 f.timeStyle = .none
                 f.dateStyle = .full
                 f.locale = Locale(identifier: "ja_JP")
@@ -1021,9 +1003,34 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 new_todo.InFlag = true
                 new_todo.base = result_t!.todoid
                 self.realm.add(new_todo)
+                
+                let cal = Calendar24()
+                let new_cal = realm.object(ofType: Todo.self, forPrimaryKey: save_id)
+                //try! realm.write{
+                cal.calendarid = randomString(length: 10)
+                cal.todoDone = false
+                cal.start = startTime
+                cal.default_allday = false
+                cal.c_dotime = result_t!.dotime
+                //            result_t!.calendars.append(cal)
+                new_cal?.InFlag = true
+                new_cal!.calendars.append(cal)
+                //}
+                myView.tag = Int(cal.calendarid)!
+                makeView(start: cal.start, c_dotime: cal.c_dotime, dotime: cal.c_dotime, calendarid: cal.calendarid, title: result_t!.title, color: UIColor.black)
+                print(myView.tag)
+                
+            }else if(result_d != nil){
+                print("~~~~~~~~^result_d~~~~~~~~")
+                d_cal.start = getTaskTime(view: myView)
+                result_d?.allDay = false
+                myView.tag = Int(result_d!.calendarid)!
+                print(myView.tag)
+                let color = UIColor(displayP3Red: CGFloat(result_d!.color_r), green: CGFloat(result_d!.color_g), blue: CGFloat(result_d!.color_b), alpha: 1.0)
+                makeView(start: d_cal.start, c_dotime: 3600, dotime: 3600, calendarid: result_d!.calendarid, title: result_d!.title, color: color)
             }else{
                 
-//                result_t?.InFlag = true
+                //                result_t?.InFlag = true
                 save_id = result_t!.todoid
             }
         }
@@ -1032,45 +1039,39 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 save_id = item.todoid
             }
         }
-//        let todo = realm.objects(Todo.self)
+        //        let todo = realm.objects(Todo.self)
         
-        let cal = Calendar24()
-        let new_cal = realm.object(ofType: Todo.self, forPrimaryKey: save_id)
-        try! realm.write{
-            cal.calendarid = randomString(length: 10)
-            cal.todoDone = false
-            cal.start = startTime
-            cal.default_allday = false
-            cal.c_dotime = result_t!.dotime
-//            result_t!.calendars.append(cal)
-            new_cal?.InFlag = true
-            new_cal!.calendars.append(cal)
+        if(tag > 1000000000 && tag <= 10000000000){ //calendar24
+            
+        }else if(tag > 10000000000 && tag <= 100000000000){ //default
+            
         }
         
         let ReturnButton :UIButton = UIButton(frame: CGRect(x: width - 15,y: 0,width: 15,height: 15))
         ReturnButton.setImage(UIImage(named:"close_black"), for: .normal)
         //ReturnButton.backgroundColor = UIColor.red
-        ReturnButton.addTarget(self, action: #selector(ReturnToMenu(_:)), for: UIControl.Event.touchUpInside)
+        ReturnButton.addTarget(self, action: #selector(deleteView(_:)), for: UIControl.Event.touchUpInside)
         
-        myView.addSubview(tasktimeLabel)
+        //タイムテキストラベル
+        //myView.addSubview(tasktimeLabel)
         
-        myView.tag = Int(cal.calendarid)!
+        //myView.tag = Int(cal.calendarid)!
+        
         myView.content.backgroundColor = UIColor.blue
         myView.leftBorder.backgroundColor = UIColor.blue
         myView.fakeView.backgroundColor = UIColor.blue
         myView.title.backgroundColor = UIColor.blue
-//        myView.content.backgroundColor = color
-//        myView.leftBorder.backgroundColor = color
-//        myView.fakeView.backgroundColor = color
-//        myView.title.backgroundColor = color
+        //        myView.content.backgroundColor = color
+        //        myView.leftBorder.backgroundColor = color
+        //        myView.fakeView.backgroundColor = color
+        //        myView.title.backgroundColor = color
         
-        titleLabel.text = " " + title
-        titleLabel.tag = 26
+        
         myView.addSubview(titleLabel)
         myView.addSubview(ReturnButton)
-        
+        print(myView)
         //カスタマイズViewを追加
-        ContentView.addSubview(myView)
+        //ContentView.addSubview(myView)
         viewtag += 1
     }
     
@@ -1078,10 +1079,16 @@ class ViewController: UIViewController, UIScrollViewDelegate {
         print("viewWillDisappear")
         userDefaultData()
         addEvent()
+        
+        try! realm.write{
+            let results = realm.objects(DefaultCalendar.self)
+            realm.delete(results)
+        }
+        
     }
     
     
-    @objc func ReturnToMenu(_ sender: UIButton) {
+    @objc func deleteView(_ sender: UIButton) {
         print("ボタンの情報: \(sender)")
         let alert: UIAlertController = UIAlertController(title: "このスケジュールを削除しますか？", message: "元々が終日の予定であるものは終日に戻ります", preferredStyle:  UIAlertController.Style.alert)
         
@@ -1107,7 +1114,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                         print(result_c)
                         self.realm.delete(result_c!)
                         print(result_t!.calendars.count)
-
+                        
                         if(result_t!.calendars.count == 0){
                             result_t?.InFlag = false
                             if(result_t!.base != ""){
@@ -1177,7 +1184,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
             for item in self.Datas{
                 if(item.afterTag == sender.superview!.tag){
                     print("Datas削除")
-//                    self.Datas.remove(at: index)
+                    //                    self.Datas.remove(at: index)
                     if(item.default_allday){
                         item.start = ""
                         item.end = ""
@@ -1207,8 +1214,8 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                         taskTitle.font = UIFont.systemFont(ofSize: 11)
                         TestView.backgroundColor = UIColor(red: CGFloat(item.color[0]), green: CGFloat(item.color[1]), blue: CGFloat(item.color[2]), alpha: CGFloat(item.color[3]))
                         TestView.layer.cornerRadius = 2
-                                           taskTitle.textAlignment = NSTextAlignment.center
-                                           taskTitle.font = UIFont(name: "Tsukushi A Round Gothic", size: 11)
+                        taskTitle.textAlignment = NSTextAlignment.center
+                        taskTitle.font = UIFont(name: "Tsukushi A Round Gothic", size: 11)
                         taskTitle.textColor = UIColor.white
                         TestView.tag = item.beforeTag
                         
@@ -1425,7 +1432,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
     
     //長押し
     @objc func LongPressed(_ sender: UILongPressGestureRecognizer) {
-
+        
         let todo = Todo()
         let cal = Calendar24()
         let result_t = realm.object(ofType: Todo.self, forPrimaryKey: String(sender.view!.tag))
@@ -1547,6 +1554,13 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                     view.alpha = 1.0
                 }
             }
+            
+            print("おーるでい")
+            for view in AlldayView.subviews{
+                print(view)
+                print(view.tag)
+            }
+            
             TargetView.layer.addSublayer(topBorder)
             if(location.x >= 250 && location.y >= 552 - dummyManu.constant){
                 UIView.animate(withDuration: 0.3, delay: 0.0, options: .curveEaseOut, animations: {
@@ -1562,7 +1576,7 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 
             }else{
                 print("moveManu")
-                let savetag = sender.self.view!.tag
+                var savetag = sender.self.view!.tag
                 var delete = ManuView.viewWithTag(savetag)
                 if(delete != nil){
                     
@@ -1623,20 +1637,37 @@ class ViewController: UIViewController, UIScrollViewDelegate {
                 }else{
                     delete = AlldayView.viewWithTag(savetag)
                     var cnt = AllStart
-                    for View in AlldayView.subviews{
-                        if(cnt != AlldayView.subviews.count + AllStart){
-                            if(savetag < View.tag){
-                                moveView2 = AlldayView.viewWithTag(View.tag)!.frame.origin
-                                UIView.animate(withDuration: 0.5, delay: 0.0, options: .curveEaseIn, animations: {
-                                    self.AlldayView.viewWithTag(View.tag)!.frame.origin = CGPoint(x: self.moveView1.x, y: self.moveView1.y)
-                                    //self.AlldayView.viewWithTag(View.tag)!.center = self.centerPoint
-                                }, completion: nil)
-                                AlldayView.viewWithTag(View.tag)!.frame.origin = moveView1
-                                moveView1 = moveView2
-                                cnt += 1
-                            }
-                        }
+                    
+                    let all_cnt = AlldayView.subviews.count
+                    
+                    for View in AlldayView.subviews.reversed(){
+                        print(View)
+                        print(View.tag)
+                        
+                            print("---------いどう-----------")
+                            //if(cnt != AlldayView.subviews.count + AllStart){
+                            print(savetag % 100)
+                            print(View.tag % 100)
+                                if(savetag % 100 < View.tag % 100){
+                                    print("いどうした")
+                                    moveView2 = AlldayView.viewWithTag(View.tag)!.frame.origin
+                                    print(moveView1)
+                                    print(moveView2)
+                                    UIView.animate(withDuration: 0.5, delay: 0.0, options: .curveEaseIn, animations: {
+                                        self.AlldayView.viewWithTag(View.tag)!.frame.origin = CGPoint(x: self.moveView1.x, y: self.moveView1.y)
+                                        //self.AlldayView.viewWithTag(View.tag)!.center = self.centerPoint
+                                    }, completion: nil)
+                                    AlldayView.viewWithTag(View.tag)!.frame.origin = moveView1
+                                    moveView1 = moveView2
+                                    savetag = View.tag
+                                    cnt += 1
+                                }
+                        print("--------------")
+                            //}
+                        
+                        
                     }
+                    
                     print("トレースビュー")
                     print(savetag)
                     traceView(userY: userY - CGFloat(65 + dummyAll.constant), height: sender.self.view!.frame.height, tag: savetag)
@@ -1740,3 +1771,6 @@ extension UIFont {
         return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
+
+
+

@@ -34,7 +34,7 @@ class EvaluViewController2: UIViewController {
         speech_label.text = ""
         self.animationTimer = Timer.scheduledTimer(timeInterval: 0.5, target: self, selector: #selector(self.animate), userInfo: nil, repeats: true)
     }
-    
+
     @objc func animate() {
         UIView.animate(withDuration: 0.5) {
             if self.menherakanojo.frame.origin.y == 135.0 {
